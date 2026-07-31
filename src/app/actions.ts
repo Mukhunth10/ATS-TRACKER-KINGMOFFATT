@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma, parseJson } from "@/lib/db";
 import { extractText, extractContact, prettifyNameFromEmail } from "@/lib/resume-parse";
+import { facetsForCandidate } from "@/lib/cv-facets";
 import { redirect } from "next/navigation";
 import { scoreByRules, type JobCriteria, type RuleDetail } from "@/lib/score-rules";
 import { scoreByAi, isAiConfigured } from "@/lib/score-ai";
@@ -306,15 +307,22 @@ export async function uploadResume(
       // Email is the identity key, so the same person applying via LinkedIn and
       // Indeed lands on one record instead of two.
       const existing = await prisma.candidate.findUnique({ where: { email } });
+      const facetFields = facetsForCandidate(text);
       const candidate = await prisma.candidate.upsert({
         where: { email },
-        update: { resumeText: text, resumeFile: file.name, ...(name ? { name } : {}) },
+        update: {
+          resumeText: text,
+          resumeFile: file.name,
+          ...(name ? { name } : {}),
+          ...facetFields,
+        },
         create: {
           name: name ?? prettifyNameFromEmail(email),
           email,
           phone: contact.phone,
           resumeText: text,
           resumeFile: file.name,
+          ...facetFields,
         },
       });
 
@@ -333,6 +341,7 @@ export async function uploadResume(
         update: {
           ruleScore: rules.score,
           ruleDetail: JSON.stringify(rules.detail),
+          provenCount: rules.detail.demonstrated.length,
           // Record every portal a duplicate arrived through, rather than
           // overwriting — knowing someone applied twice is useful signal.
           // Split-and-check so re-uploading from the same portal doesn't
@@ -349,6 +358,7 @@ export async function uploadResume(
           source,
           ruleScore: rules.score,
           ruleDetail: JSON.stringify(rules.detail),
+          provenCount: rules.detail.demonstrated.length,
         },
       });
 
@@ -409,7 +419,11 @@ export async function rescoreJob(jobId: string, _prev: ActionState): Promise<Act
     const rules = scoreByRules(app.candidate.resumeText, criteria);
     await prisma.application.update({
       where: { id: app.id },
-      data: { ruleScore: rules.score, ruleDetail: JSON.stringify(rules.detail) },
+      data: {
+        ruleScore: rules.score,
+        ruleDetail: JSON.stringify(rules.detail),
+        provenCount: rules.detail.demonstrated.length,
+      },
     });
   }
 

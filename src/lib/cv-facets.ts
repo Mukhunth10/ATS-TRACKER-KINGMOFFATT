@@ -62,6 +62,21 @@ export const REGION_LABEL: Record<Region, string> = {
 
 export const TENURE_THRESHOLDS = [1, 2, 3, 5, 7, 10];
 
+/**
+ * Expands a rank-based "X or higher" filter into the concrete set of stored
+ * string values at or above that rank — for building a SQL `IN (...)` filter
+ * against the persisted (string) column, since the rank itself isn't stored.
+ */
+export function degreesAtOrAbove(min: DegreeLevel): DegreeLevel[] {
+  const threshold = DEGREE_RANK[min];
+  return (Object.keys(DEGREE_RANK) as DegreeLevel[]).filter((d) => DEGREE_RANK[d] >= threshold);
+}
+
+export function bimRolesAtOrAbove(min: BimRole): BimRole[] {
+  const threshold = BIM_ROLE_RANK[min];
+  return (Object.keys(BIM_ROLE_RANK) as BimRole[]).filter((r) => BIM_ROLE_RANK[r] >= threshold);
+}
+
 export interface CvFacets {
   workAuth: WorkAuth;
   degree: DegreeLevel;
@@ -230,4 +245,25 @@ export function extractFacets(resumeText: string): CvFacets {
     regions: detectRegions(resumeText),
     longestTenureYears: detectLongestTenureYears(resumeText),
   };
+}
+
+/** Shape of the Candidate columns these facets are persisted into. */
+export interface CandidateFacetColumns {
+  workAuth: WorkAuth;
+  degree: DegreeLevel;
+  lodMax: LodLevel | null;
+  bimRole: BimRole;
+  digitalEngineering: boolean;
+  regions: string;
+  longestTenureYears: number | null;
+}
+
+/**
+ * Computes facets and shapes them for a Prisma `create`/`update` on Candidate
+ * in one call — every upload path needs exactly this, so the JSON-stringify
+ * of `regions` lives in one place rather than three.
+ */
+export function facetsForCandidate(resumeText: string): CandidateFacetColumns {
+  const facets = extractFacets(resumeText);
+  return { ...facets, regions: JSON.stringify(facets.regions) };
 }

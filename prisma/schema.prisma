@@ -84,7 +84,27 @@ model Candidate {
   resumeFile String? // original filename
   createdAt DateTime @default(now())
 
+  // CV facets (src/lib/cv-facets.ts), computed once at upload time and persisted
+  // here so the candidate list can filter with a SQL WHERE instead of running
+  // regexes over every resume's text on every page load — the thing that stops
+  // scaling once a role has more than a few thousand applicants. Nullable/false
+  // defaults so existing rows before this column existed read as "unknown"
+  // rather than "definitely none", same meaning `extractFacets` already used.
+  workAuth           String?  // right | sponsor | unknown (cv-facets.ts WorkAuth)
+  degree             String?  // phd | master | bachelor | diploma | none
+  lodMax             Int?
+  bimRole            String?  // manager | lead | coordinator | none
+  digitalEngineering Boolean  @default(false)
+  regions            String   @default("[]") // JSON string[] (cv-facets.ts Region)
+  longestTenureYears Int?
+
   applications Application[]
+
+  @@index([workAuth])
+  @@index([degree])
+  @@index([lodMax])
+  @@index([bimRole])
+  @@index([longestTenureYears])
 }
 
 model Application {
@@ -106,6 +126,10 @@ model Application {
   ruleScore   Int      @default(0)
   // JSON: { matched: string[], missing: string[], yearsDetected: number }
   ruleDetail  String   @default("{}")
+  // Mirrors ruleDetail.demonstrated.length — kept alongside it so "sort by
+  // proven skills" is a SQL ORDER BY instead of parsing every row's JSON on
+  // every page load.
+  provenCount Int      @default(0)
 
   // Claude score (0-100), null until AI screening runs
   aiScore     Int?
@@ -124,6 +148,9 @@ model Application {
 
   @@unique([jobId, candidateId])
   @@index([jobId, stage])
+  @@index([jobId, ruleScore])
+  @@index([jobId, aiScore])
+  @@index([jobId, provenCount])
 }
 
 /// A technical test sent to a shortlisted candidate — e.g. a Revit modelling

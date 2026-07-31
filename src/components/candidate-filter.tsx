@@ -1,15 +1,14 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useRef } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ScoreRing, SkillChip, STAGES, inputBase } from "./ui";
 import { StageSelect } from "./stage-select";
 import {
-  DEGREE_RANK,
   DEGREE_LABEL,
   WORK_AUTH_LABEL,
   LOD_LEVELS,
-  BIM_ROLE_RANK,
   BIM_ROLE_LABEL,
   REGION_LABEL,
   TENURE_THRESHOLDS,
@@ -49,149 +48,187 @@ export interface FilterRow {
   longestTenureYears?: number | null;
   /** Candidate location, when known — used by the location filter. */
   location?: string | null;
-  /** Lowercased resume text, for keyword search. */
-  haystack: string;
 }
 
 type SortKey = "score" | "name" | "proven" | "assessment";
 
+export interface CurrentFilters {
+  minScore: number;
+  stage: string;
+  source: string;
+  q: string;
+  sort: SortKey;
+  workAuth: string;
+  minDegree: string;
+  location: string;
+  minLod: string;
+  minBimRole: string;
+  digital: boolean;
+  region: string;
+  minTenure: string;
+}
+
+const DEFAULTS: CurrentFilters = {
+  minScore: 0,
+  stage: "all",
+  source: "all",
+  q: "",
+  sort: "score",
+  workAuth: "all",
+  minDegree: "all",
+  location: "",
+  minLod: "all",
+  minBimRole: "all",
+  digital: false,
+  region: "all",
+  minTenure: "all",
+};
+
 /**
  * The screen recruiters spend their day in.
  *
- * Filtering happens in the browser because the whole list for one role is
- * already on the page — a round trip per keystroke would feel sluggish for no
- * benefit. Past a few thousand applicants on a single role this should move to
- * a server query.
+ * Filtering, sorting and pagination all happen server-side (the job page
+ * builds a Prisma query from the URL's search params) — this component is a
+ * thin controller that reflects the current URL and pushes updates to it,
+ * plus the read-only list of whichever page of results the server already
+ * picked out. It never holds the full applicant list in the browser, which is
+ * what lets a role with thousands of applicants stay fast.
  */
 export function CandidateFilter({
   rows,
   aiEnabled,
+  totalCount,
+  filteredCount,
+  page,
+  pageSize,
+  sources,
+  filters,
 }: {
   rows: FilterRow[];
   aiEnabled: boolean;
+  totalCount: number;
+  filteredCount: number;
+  page: number;
+  pageSize: number;
+  sources: string[];
+  filters: CurrentFilters;
 }) {
-  const [minScore, setMinScore] = useState(0);
-  const [stage, setStage] = useState("all");
-  const [source, setSource] = useState("all");
-  const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortKey>("score");
-  const [workAuth, setWorkAuth] = useState("all"); // all | right | sponsor | unknown
-  const [minDegree, setMinDegree] = useState("all"); // all | bachelor | master | phd
-  const [location, setLocation] = useState("");
-  const [minLod, setMinLod] = useState("all"); // all | 100 | 200 | 300 | 350 | 400 | 500
-  const [minBimRole, setMinBimRole] = useState("all"); // all | coordinator | lead | manager
-  const [digitalOnly, setDigitalOnly] = useState(false);
-  const [region, setRegion] = useState("all"); // all | uk | ireland | germany | europe
-  const [minTenure, setMinTenure] = useState("all"); // all | 1 | 2 | 3 | 5 | 7 | 10
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
-  const sources = useMemo(
-    () =>
-      [
-        ...new Set(
-          rows.flatMap((r) => (r.source ?? "direct").split(",").map((s) => s.trim())),
-        ),
-      ].sort(),
-    [rows],
-  );
+  // Free-text inputs are debounced so typing doesn't fire a navigation per
+  // keystroke — everything else (selects, checkboxes, range) is a discrete
+  // choice and navigates immediately.
+  const [query, setQuery] = useState(filters.q);
+  const [location, setLocation] = useState(filters.location);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The last query string this component actually asked the router for.
+  // Two navigations issued close together (e.g. type a search term, then hit
+  // Clear before the first has finished loading) can have their RSC
+  // responses land out of order — whichever request happens to be slower
+  // (a filtered search usually is, since it scans resumeText) can resolve
+  // *after* a faster later one and silently overwrite the URL with stale
+  // params. This watchdog re-asserts the most recent request if that happens,
+  // rather than trusting the router to always apply pushes in call order.
+  const lastRequested = useRef(searchParams.toString());
 
-  const filtered = useMemo(() => {
-    // Space-separated terms are ANDed, so "revit primavera" finds CVs with both.
-    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  // Resyncs the two debounced text fields whenever the server-provided
+  // filters change for a reason other than typing here — the browser back
+  // button, the "Clear" button, or another tab editing the same URL.
+  // Adjusting state during render (React's sanctioned pattern for this)
+  // rather than in a useEffect, which would commit a stale render first and
+  // then force an extra one.
+  const [syncedFrom, setSyncedFrom] = useState({ q: filters.q, location: filters.location });
+  if (syncedFrom.q !== filters.q || syncedFrom.location !== filters.location) {
+    setSyncedFrom({ q: filters.q, location: filters.location });
+    setQuery(filters.q);
+    setLocation(filters.location);
+  }
 
-    const loc = location.trim().toLowerCase();
+  function navigate(updates: Partial<CurrentFilters & { page: number }>) {
+    // Cancels any pending debounced text-input navigation that hasn't fired
+    // yet — otherwise it would fire after this one and overwrite it.
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
-    const result = rows.filter((r) => {
-      if ((r.aiScore ?? r.ruleScore) < minScore) return false;
-      if (stage !== "all" && r.stage !== stage) return false;
-      if (source !== "all" && !(r.source ?? "direct").includes(source)) return false;
-      if (workAuth !== "all" && (r.workAuth ?? "unknown") !== workAuth) return false;
-      if (minDegree !== "all") {
-        const rank = DEGREE_RANK[r.degree ?? "none"];
-        if (rank < DEGREE_RANK[minDegree as DegreeLevel]) return false;
-      }
-      if (minLod !== "all" && (r.lodMax ?? 0) < Number(minLod)) return false;
-      if (minBimRole !== "all") {
-        const rank = BIM_ROLE_RANK[r.bimRole ?? "none"];
-        if (rank < BIM_ROLE_RANK[minBimRole as BimRole]) return false;
-      }
-      if (digitalOnly && !r.digitalEngineering) return false;
-      if (region !== "all" && !(r.regions ?? []).includes(region as Region)) return false;
-      if (minTenure !== "all" && (r.longestTenureYears ?? 0) < Number(minTenure)) return false;
-      if (loc) {
-        // Match the candidate's location field first, then fall back to any
-        // mention of the place in the CV body.
-        const where = `${r.location ?? ""} ${r.haystack}`.toLowerCase();
-        if (!where.includes(loc)) return false;
-      }
-      if (terms.length > 0) {
-        const hay = `${r.name} ${r.email} ${r.haystack}`.toLowerCase();
-        if (!terms.every((t) => hay.includes(t))) return false;
-      }
-      return true;
-    });
+    const params = new URLSearchParams(searchParams.toString());
+    const merged = { ...filters, ...updates };
 
-    return result.sort((a, b) => {
-      if (sort === "name") return a.name.localeCompare(b.name);
-      if (sort === "proven") return b.proven - a.proven;
-      if (sort === "assessment") {
-        // Quality first; a candidate with no assessment sinks below any who has
-        // one. Working time (fewer minutes = faster) breaks ties on quality —
-        // exactly "who did it well in the least time".
-        const qa = a.assessScore ?? -1;
-        const qb = b.assessScore ?? -1;
-        if (qb !== qa) return qb - qa;
-        return (a.assessMin ?? Infinity) - (b.assessMin ?? Infinity);
-      }
-      return (b.aiScore ?? b.ruleScore) - (a.aiScore ?? a.ruleScore);
-    });
-  }, [
-    rows,
-    minScore,
-    stage,
-    source,
-    query,
-    sort,
-    workAuth,
-    minDegree,
-    location,
-    minLod,
-    minBimRole,
-    digitalOnly,
-    region,
-    minTenure,
-  ]);
+    const set = (key: string, value: string | number | boolean, fallback: string | number | boolean) => {
+      if (value === fallback || value === "") params.delete(key);
+      else params.set(key, String(value));
+    };
+    set("minScore", merged.minScore, DEFAULTS.minScore);
+    set("stage", merged.stage, DEFAULTS.stage);
+    set("source", merged.source, DEFAULTS.source);
+    set("q", merged.q, DEFAULTS.q);
+    set("sort", merged.sort, DEFAULTS.sort);
+    set("workAuth", merged.workAuth, DEFAULTS.workAuth);
+    set("minDegree", merged.minDegree, DEFAULTS.minDegree);
+    set("location", merged.location, DEFAULTS.location);
+    set("minLod", merged.minLod, DEFAULTS.minLod);
+    set("minBimRole", merged.minBimRole, DEFAULTS.minBimRole);
+    if (merged.digital) params.set("digital", "1");
+    else params.delete("digital");
+    set("region", merged.region, DEFAULTS.region);
+    set("minTenure", merged.minTenure, DEFAULTS.minTenure);
+
+    // Any filter change starts back at page 1 — an explicit page update
+    // (Prev/Next) is the only case that should keep a non-default page.
+    const nextPage = "page" in updates ? updates.page! : 1;
+    if (nextPage <= 1) params.delete("page");
+    else params.set("page", String(nextPage));
+
+    const queryString = params.toString();
+    const target = `${pathname}?${queryString}`;
+    lastRequested.current = queryString;
+    router.push(target);
+
+    // Watchdog: if a slower, earlier-issued navigation's response lands after
+    // this one and clobbers the URL, put back what was actually asked for
+    // last — but only if nothing even newer has been requested since (in
+    // which case that newer call owns its own watchdog and this one backs off).
+    setTimeout(() => {
+      if (lastRequested.current !== queryString) return;
+      const current = window.location.search.replace(/^\?/, "");
+      if (current !== queryString) router.replace(target);
+    }, 1500);
+  }
+
+  function debouncedNavigate(updates: Partial<CurrentFilters>) {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => navigate(updates), 350);
+  }
 
   const control =
     "rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink transition-colors duration-150 focus:border-primary focus:outline-none";
 
   const hasFilters =
-    minScore > 0 ||
-    stage !== "all" ||
-    source !== "all" ||
-    query !== "" ||
-    workAuth !== "all" ||
-    minDegree !== "all" ||
-    location !== "" ||
-    minLod !== "all" ||
-    minBimRole !== "all" ||
-    digitalOnly ||
-    region !== "all" ||
-    minTenure !== "all";
+    filters.minScore > 0 ||
+    filters.stage !== "all" ||
+    filters.source !== "all" ||
+    filters.q !== "" ||
+    filters.workAuth !== "all" ||
+    filters.minDegree !== "all" ||
+    filters.location !== "" ||
+    filters.minLod !== "all" ||
+    filters.minBimRole !== "all" ||
+    filters.digital ||
+    filters.region !== "all" ||
+    filters.minTenure !== "all";
 
   const clearAll = () => {
-    setMinScore(0);
-    setStage("all");
-    setSource("all");
     setQuery("");
-    setWorkAuth("all");
-    setMinDegree("all");
     setLocation("");
-    setMinLod("all");
-    setMinBimRole("all");
-    setDigitalOnly(false);
-    setRegion("all");
-    setMinTenure("all");
+    // Routed through navigate() (with all fields reset to their defaults) so
+    // it cancels any pending debounced navigation the same way every other
+    // filter change does, rather than duplicating that logic here.
+    navigate({ ...DEFAULTS });
   };
+
+  const pageStart = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageEnd = Math.min(page * pageSize, filteredCount);
+  const totalPages = Math.max(1, Math.ceil(filteredCount / pageSize));
 
   return (
     <div className="space-y-3">
@@ -217,7 +254,10 @@ export function CandidateFilter({
             </svg>
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                debouncedNavigate({ q: e.target.value });
+              }}
               placeholder="Search name, email, or any word in the CV…"
               aria-label="Search candidates"
               className={`${inputBase} py-1.5 pl-9`}
@@ -231,17 +271,17 @@ export function CandidateFilter({
               min={0}
               max={100}
               step={5}
-              value={minScore}
-              onChange={(e) => setMinScore(Number(e.target.value))}
+              defaultValue={filters.minScore}
+              onChange={(e) => debouncedNavigate({ minScore: Number(e.target.value) })}
               className="w-24 accent-[var(--primary)]"
               aria-label="Minimum score"
             />
-            <span className="tabular w-7 text-right font-medium">{minScore}</span>
+            <span className="tabular w-7 text-right font-medium">{filters.minScore}</span>
           </label>
 
           <select
-            value={stage}
-            onChange={(e) => setStage(e.target.value)}
+            value={filters.stage}
+            onChange={(e) => navigate({ stage: e.target.value })}
             aria-label="Filter by stage"
             className={`${control} capitalize`}
           >
@@ -255,8 +295,8 @@ export function CandidateFilter({
 
           {sources.length > 1 && (
             <select
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
+              value={filters.source}
+              onChange={(e) => navigate({ source: e.target.value })}
               aria-label="Filter by source"
               className={control}
             >
@@ -270,8 +310,8 @@ export function CandidateFilter({
           )}
 
           <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
+            value={filters.sort}
+            onChange={(e) => navigate({ sort: e.target.value as SortKey })}
             aria-label="Sort by"
             className={control}
           >
@@ -291,7 +331,7 @@ export function CandidateFilter({
           )}
 
           <span className="tabular ml-auto text-sm text-ink-muted">
-            {filtered.length} of {rows.length}
+            {filteredCount} of {totalCount}
           </span>
         </div>
 
@@ -301,8 +341,8 @@ export function CandidateFilter({
           <label className="flex items-center gap-1.5 text-sm">
             <span className="text-ink-muted">Work auth</span>
             <select
-              value={workAuth}
-              onChange={(e) => setWorkAuth(e.target.value)}
+              value={filters.workAuth}
+              onChange={(e) => navigate({ workAuth: e.target.value })}
               aria-label="Filter by work authorisation"
               className={control}
             >
@@ -316,8 +356,8 @@ export function CandidateFilter({
           <label className="flex items-center gap-1.5 text-sm">
             <span className="text-ink-muted">Degree</span>
             <select
-              value={minDegree}
-              onChange={(e) => setMinDegree(e.target.value)}
+              value={filters.minDegree}
+              onChange={(e) => navigate({ minDegree: e.target.value })}
               aria-label="Filter by minimum degree"
               className={control}
             >
@@ -332,7 +372,10 @@ export function CandidateFilter({
             <span className="text-ink-muted">Location</span>
             <input
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
+              onChange={(e) => {
+                setLocation(e.target.value);
+                debouncedNavigate({ location: e.target.value });
+              }}
               placeholder="e.g. Dublin"
               aria-label="Filter by location"
               className={`${control} w-32`}
@@ -342,8 +385,8 @@ export function CandidateFilter({
           <label className="flex items-center gap-1.5 text-sm">
             <span className="text-ink-muted">LOD</span>
             <select
-              value={minLod}
-              onChange={(e) => setMinLod(e.target.value)}
+              value={filters.minLod}
+              onChange={(e) => navigate({ minLod: e.target.value })}
               aria-label="Filter by minimum LOD level"
               className={control}
             >
@@ -359,8 +402,8 @@ export function CandidateFilter({
           <label className="flex items-center gap-1.5 text-sm">
             <span className="text-ink-muted">BIM role</span>
             <select
-              value={minBimRole}
-              onChange={(e) => setMinBimRole(e.target.value)}
+              value={filters.minBimRole}
+              onChange={(e) => navigate({ minBimRole: e.target.value })}
               aria-label="Filter by minimum BIM role"
               className={control}
             >
@@ -374,8 +417,8 @@ export function CandidateFilter({
           <label className="flex items-center gap-1.5 text-sm">
             <span className="text-ink-muted">Region</span>
             <select
-              value={region}
-              onChange={(e) => setRegion(e.target.value)}
+              value={filters.region}
+              onChange={(e) => navigate({ region: e.target.value })}
               aria-label="Filter by project region"
               className={control}
             >
@@ -390,8 +433,8 @@ export function CandidateFilter({
           <label className="flex min-h-11 items-center gap-1.5 text-sm">
             <input
               type="checkbox"
-              checked={digitalOnly}
-              onChange={(e) => setDigitalOnly(e.target.checked)}
+              checked={filters.digital}
+              onChange={(e) => navigate({ digital: e.target.checked })}
               className="accent-[var(--primary)]"
             />
             <span className="text-ink-muted">Digital engineering</span>
@@ -400,8 +443,8 @@ export function CandidateFilter({
           <label className="flex items-center gap-1.5 text-sm">
             <span className="text-ink-muted">Tenure</span>
             <select
-              value={minTenure}
-              onChange={(e) => setMinTenure(e.target.value)}
+              value={filters.minTenure}
+              onChange={(e) => navigate({ minTenure: e.target.value })}
               aria-label="Filter by minimum tenure at one employer"
               className={control}
             >
@@ -422,13 +465,13 @@ export function CandidateFilter({
 
       {/* --- Results --- */}
       <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-card">
-        {filtered.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="px-6 py-14 text-center text-sm text-ink-muted">
             No candidates match these filters.
           </p>
         ) : (
           <ul className="divide-y divide-[var(--border)]">
-            {filtered.map((r, i) => (
+            {rows.map((r, i) => (
               <li
                 key={r.id}
                 className="rise"
@@ -567,6 +610,33 @@ export function CandidateFilter({
               </li>
             ))}
           </ul>
+        )}
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between border-t border-line px-4 py-2.5 text-sm">
+            <span className="text-ink-muted">
+              {pageStart}-{pageEnd} of {filteredCount}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate({ page: page - 1 })}
+                disabled={page <= 1}
+                className="rounded-lg px-2.5 py-1 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                ← Prev
+              </button>
+              <span className="tabular text-ink-subtle">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                onClick={() => navigate({ page: page + 1 })}
+                disabled={page >= totalPages}
+                className="rounded-lg px-2.5 py-1 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

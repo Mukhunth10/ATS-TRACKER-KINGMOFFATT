@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma, parseJson } from "@/lib/db";
 import { extractText, extractContact } from "@/lib/resume-parse";
+import { facetsForCandidate } from "@/lib/cv-facets";
 import { scoreByRules, type JobCriteria } from "@/lib/score-rules";
 import { logActivity } from "@/lib/activity";
 
@@ -73,10 +74,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   const contact = extractContact(text);
   const finalPhone = phone || contact.phone || null;
 
+  const facetFields = facetsForCandidate(text);
   const candidate = await prisma.candidate.upsert({
     where: { email },
-    update: { resumeText: text, resumeFile: file.name, name, ...(finalPhone ? { phone: finalPhone } : {}) },
-    create: { name, email, phone: finalPhone, resumeText: text, resumeFile: file.name },
+    update: {
+      resumeText: text,
+      resumeFile: file.name,
+      name,
+      ...(finalPhone ? { phone: finalPhone } : {}),
+      ...facetFields,
+    },
+    create: { name, email, phone: finalPhone, resumeText: text, resumeFile: file.name, ...facetFields },
   });
 
   const rules = scoreByRules(text, criteriaFor(job));
@@ -87,13 +95,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
 
   const application = await prisma.application.upsert({
     where: { jobId_candidateId: { jobId: job.id, candidateId: candidate.id } },
-    update: { ruleScore: rules.score, ruleDetail: JSON.stringify(rules.detail) },
+    update: {
+      ruleScore: rules.score,
+      ruleDetail: JSON.stringify(rules.detail),
+      provenCount: rules.detail.demonstrated.length,
+    },
     create: {
       jobId: job.id,
       candidateId: candidate.id,
       source: "careers page",
       ruleScore: rules.score,
       ruleDetail: JSON.stringify(rules.detail),
+      provenCount: rules.detail.demonstrated.length,
     },
   });
 

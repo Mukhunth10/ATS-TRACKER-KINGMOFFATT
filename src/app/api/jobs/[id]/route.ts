@@ -72,7 +72,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       const rules = await scoreCandidate(app.candidate.resumeText, criteria);
       await prisma.application.update({
         where: { id: app.id },
-        data: { ruleScore: rules.score, ruleDetail: JSON.stringify(rules.detail) },
+        data: {
+          ruleScore: rules.score,
+          ruleDetail: JSON.stringify(rules.detail),
+          provenCount: rules.detail.demonstrated.length,
+        },
       });
     }
   }

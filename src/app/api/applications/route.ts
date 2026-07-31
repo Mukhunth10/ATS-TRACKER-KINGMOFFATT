@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma, parseJson } from "@/lib/db";
 import { extractText, extractContact, prettifyNameFromEmail } from "@/lib/resume-parse";
+import { facetsForCandidate } from "@/lib/cv-facets";
 import { scoreCandidate } from "@/lib/score-rules";
 import { denyAnonymous } from "@/lib/api-auth";
 
@@ -60,10 +61,16 @@ export async function POST(req: Request) {
     );
   }
 
+  const facetFields = facetsForCandidate(text);
   const candidate = await prisma.candidate.upsert({
     where: { email },
     // A returning candidate's latest resume is the one worth scoring against.
-    update: { resumeText: text, resumeFile: file.name, name: name ?? undefined },
+    update: {
+      resumeText: text,
+      resumeFile: file.name,
+      name: name ?? undefined,
+      ...facetFields,
+    },
     create: {
       name: name ?? prettifyNameFromEmail(email),
       email,
@@ -71,6 +78,7 @@ export async function POST(req: Request) {
       location: (form.get("location") as string) || null,
       resumeText: text,
       resumeFile: file.name,
+      ...facetFields,
     },
   });
 
@@ -99,6 +107,7 @@ export async function POST(req: Request) {
     update: {
       ruleScore: rules.score,
       ruleDetail: JSON.stringify(rules.detail),
+      provenCount: rules.detail.demonstrated.length,
       source: mergedSource,
     },
     create: {
@@ -107,6 +116,7 @@ export async function POST(req: Request) {
       source,
       ruleScore: rules.score,
       ruleDetail: JSON.stringify(rules.detail),
+      provenCount: rules.detail.demonstrated.length,
     },
     include: { candidate: true },
   });
