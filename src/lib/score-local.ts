@@ -26,10 +26,11 @@ import type { AiResult } from "./score-ai";
 
 const DEFAULT_URL = "http://localhost:11434";
 
-// Matches the Qwen3 build already pulled on this machine. Override with
-// LOCAL_AI_MODEL if you pull a different one (e.g. "qwen3:8b" for a lighter,
-// faster model on a machine without much VRAM to spare).
-const DEFAULT_MODEL = "qwen3.6:latest";
+// Small and fast — screening runs one candidate at a time, so per-candidate
+// latency matters more than squeezing out the last bit of accuracy. Override
+// with LOCAL_AI_MODEL for a bigger model (e.g. "qwen3.6:latest") if quality
+// matters more than speed on a given machine.
+const DEFAULT_MODEL = "qwen3:1.7b";
 
 export function localAiConfigured(): boolean {
   // Local screening is considered "on" whenever it's explicitly enabled or a
@@ -247,6 +248,11 @@ async function callOllama(model: string, prompt: string): Promise<string> {
       // JSON". Far more reliable than free-form + parsing.
       format: LOCAL_SCHEMA,
       stream: false,
+      // The schema's own "reasoning" field already forces think-before-scoring
+      // in a structured way — Qwen3's native <think> preamble on top of that is
+      // pure redundant overhead, and competes with the real output for the same
+      // num_predict budget (likely why a candidate occasionally fails to parse).
+      think: false,
       options: {
         // Deterministic, reproducible scoring — the same CV always scores the same.
         temperature: 0,
