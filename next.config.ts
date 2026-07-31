@@ -25,7 +25,13 @@ const nextConfig: NextConfig = {
       ],
       // Default is 1MB, which a single CV can approach and a multi-CV batch
       // upload always blows past — this must cover many PDFs/DOCX at once.
-      bodySizeLimit: "25mb",
+      // Capped well short of what Render's free 512MB instance could buffer
+      // without risking an OOM crash mid-upload; a paid plan with more RAM
+      // can raise this further for genuinely large batches (thousands of CVs
+      // in one go — upload in a few batches of a few hundred either way,
+      // since the candidate list itself isn't built for one role holding
+      // thousands of rows yet, see candidate-filter.tsx).
+      bodySizeLimit: "75mb",
     },
   },
 };
