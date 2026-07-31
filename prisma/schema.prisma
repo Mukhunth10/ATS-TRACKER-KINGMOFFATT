@@ -1,0 +1,224 @@
+// Portable schema: avoids enums and array columns so the same models run on
+// SQLite locally and Postgres in production. Swap `provider` to "postgresql"
+// and point DATABASE_URL at the managed instance — no model changes needed.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 takes the connection URL from prisma.config.ts (for migrations) and
+// from the driver adapter passed to PrismaClient (at runtime) — not from here.
+datasource db {
+  provider = "sqlite"
+}
+
+/// A person who can log in. Candidate records are separate — this is staff only.
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  /// scrypt hash as "salt:derivedKey". Never store or log the raw password.
+  passwordHash String
+  role         String   @default("recruiter") // admin | recruiter
+  /// A disabled user cannot log in and their sessions are revoked. We disable
+  /// rather than delete so the audit trail and notes keep their author.
+  disabled     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  sessions Session[]
+}
+
+/// Server-side sessions, so a login can be revoked immediately by deleting the
+/// row. A self-contained signed cookie could not be revoked before it expired.
+model Session {
+  id        String   @id @default(cuid())
+  /// Random opaque token; this value is what the cookie carries.
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Job {
+  id        String   @id @default(cuid())
+  title     String
+  // BIM discipline focus, e.g. "Revit API", "Dynamo/Python", "IFC/openBIM"
+  track     String
+  location  String
+  seniority String // junior | mid | senior | lead
+  // JSON array of keys from the built-in skill library
+  mustHave  String   @default("[]")
+  niceToHave String  @default("[]")
+  // JSON array of raw keyword strings a recruiter typed for this role, e.g.
+  // ["Primavera P6 | P6", "quantity takeoff"]. Lets the tool cover any
+  // construction discipline without a code change.
+  customMustHave   String @default("[]")
+  customNiceToHave String @default("[]")
+  minYears  Int      @default(0)
+  status    String   @default("open") // open | paused | closed
+  description String  @default("")
+
+  // Public "Apply" page: candidates upload their own CV via this secret token in
+  // the URL (/apply/<applyToken>). applyOpen lets a recruiter stop accepting
+  // applications without deleting the link.
+  applyToken String  @unique @default(cuid())
+  applyOpen  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  applications Application[]
+}
+
+model Candidate {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  phone     String?
+  location  String?
+  // Raw extracted resume text — kept so a job can be re-scored without re-upload
+  resumeText String  @default("")
+  resumeFile String? // original filename
+  createdAt DateTime @default(now())
+
+  applications Application[]
+}
+
+model Application {
+  id          String   @id @default(cuid())
+  jobId       String
+  candidateId String
+
+  // Pipeline position — Workday-style recruiting stages.
+  stage       String   @default("applied") // applied | screening | assessment | interview | offer | hired | rejected
+  // Why a candidate was declined (Workday-style disposition reason). Empty
+  // unless the stage is rejected — recorded for fair, auditable hiring.
+  dispositionReason String @default("")
+
+  // Where the application came from: LinkedIn, Indeed, jobs.ie, careers page,
+  // referral, agency. Free text so a new portal never needs a schema change.
+  source      String   @default("direct")
+
+  // Rules-based score (0-100), always computed
+  ruleScore   Int      @default(0)
+  // JSON: { matched: string[], missing: string[], yearsDetected: number }
+  ruleDetail  String   @default("{}")
+
+  // Claude score (0-100), null until AI screening runs
+  aiScore     Int?
+  aiSummary   String?
+  // JSON: { strengths: string[], gaps: string[], bimEvidence: {skill, evidence}[], recommendation }
+  aiDetail    String?
+  aiScoredAt  DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  job        Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate  Candidate   @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  notes      Note[]
+  assessment Assessment?
+
+  @@unique([jobId, candidateId])
+  @@index([jobId, stage])
+}
+
+/// A technical test sent to a shortlisted candidate — e.g. a Revit modelling
+/// task for a BIM Lead role. The candidate has no login, so they submit through
+/// a secret tokenised link. Timing is captured two ways: wall-clock from send to
+/// submit (automatic, but includes idle time), and the real working duration a
+/// reviewer reads off the screen recording (the trustworthy speed metric).
+model Assessment {
+  id            String   @id @default(cuid())
+  applicationId String   @unique
+  title         String   @default("Technical assessment")
+  instructions  String   @default("")
+  /// Link to the test file you send them (Drive/Dropbox/WeTransfer).
+  testUrl       String   @default("")
+  /// Random secret that gates the public submission page.
+  token         String   @unique
+
+  status      String    @default("sent") // sent | submitted | reviewed
+  sentAt      DateTime  @default(now())
+  submittedAt DateTime?
+
+  // What the candidate returns — links, not uploads, so a multi-hundred-MB
+  // screen recording never has to stream through the browser.
+  videoUrl      String @default("")
+  outputUrl     String @default("")
+  candidateNote String @default("")
+
+  // Consent record — the GDPR "demonstrate consent" requirement. Granular:
+  // screen and camera are separate purposes and recorded separately. The notice
+  // version pins which wording the candidate actually agreed to, and consentAt
+  // is when. No IP is stored — data minimisation.
+  consentScreen        Boolean   @default(false)
+  consentCamera        Boolean   @default(false)
+  consentNoticeVersion String    @default("")
+  consentAt            DateTime?
+
+  // Attention monitoring result, computed in the candidate's browser during the
+  // recording. A REVIEWER AID, never an automated decision: these are hints for
+  // a human to check against the footage, not a verdict. Because the detection
+  // runs client-side, a determined cheater could suppress it — the recording is
+  // the ground truth, these numbers are the "worth a look" signal.
+  attentionAwaySec Int @default(0)
+  attentionEvents  Int @default(0)
+
+  // Extended proctoring signals — same "reviewer aid, never a verdict" rule.
+  // Behavioural (not biometric): times the test tab lost focus and total seconds
+  // hidden, paste/copy counts, fullscreen exits, and moments more than one face
+  // was visible. proctorLog is a JSON timeline of {t, type} events for the
+  // reviewer to scrub against the recording.
+  proctorTabHiddenSec    Int    @default(0)
+  proctorTabSwitches     Int    @default(0)
+  proctorPastes          Int    @default(0)
+  proctorCopies          Int    @default(0)
+  proctorFullscreenExits Int    @default(0)
+  proctorMultiFace       Int    @default(0)
+  proctorLog             String @default("[]")
+
+  // Reviewer's verdict. quality is the primary ranking key; durationMin is the
+  // real working time from the recording and breaks ties between close scores.
+  qualityScore Int?
+  durationMin  Int?
+  reviewNotes  String    @default("")
+  reviewedAt   DateTime?
+
+  createdAt DateTime @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+/// Audit trail — one row per meaningful action, the way Workday keeps a process
+/// history on every record. Answers "who did what, when" and feeds both the
+/// activity timeline and the real-time updates.
+model Activity {
+  id            String   @id @default(cuid())
+  jobId         String?
+  applicationId String?
+  /// Name of the staff member, or "candidate" / "system" for non-staff events.
+  actor         String   @default("system")
+  /// Machine type: stage_change | note | screened | uploaded | assessment_sent |
+  /// assessment_submitted | reviewed | created.
+  type          String
+  /// Human-readable one-liner shown in the timeline.
+  detail        String
+  createdAt     DateTime @default(now())
+
+  @@index([jobId, createdAt])
+  @@index([applicationId, createdAt])
+}
+
+model Note {
+  id            String   @id @default(cuid())
+  applicationId String
+  author        String   @default("recruiter")
+  body          String
+  createdAt     DateTime @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}

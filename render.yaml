@@ -1,0 +1,42 @@
+# Render Blueprint — deploys the ATS as a single always-on web service.
+# In Render: New → Blueprint → connect the ats_tracker repo → it reads this file.
+# Then set the secret env vars (marked sync:false) in the dashboard.
+#
+# Database: hosted SQLite on Turso (free, no card). Create the DB, run
+# `npm run init:turso` once locally to create the schema + seed, then paste the
+# TURSO_* values below.
+services:
+  - type: web
+    name: ats-tracker
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      # --- Database (Turso / libSQL) — set both in the dashboard ---
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      # --- Who may create an account (share only with your HR testers) ---
+      - key: SIGNUP_CODE
+        sync: false
+      # --- Keep the heavy local embedding model off the 512 MB free instance.
+      #     Keyword + evidence scoring still works fully. ---
+      - key: SEMANTIC_MATCHING
+        value: "off"
+      # --- Candidate-facing privacy notice (fill with real details before
+      #     sending assessments to real people) ---
+      - key: COMPANY_NAME
+        value: "King & Moffatt (demo)"
+      - key: PRIVACY_CONTACT_EMAIL
+        sync: false
+      - key: DATA_RETENTION
+        value: "deleted at the end of this demo"
+      - key: PRIVACY_NOTICE_VERSION
+        value: "1"

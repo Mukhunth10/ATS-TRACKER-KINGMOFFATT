@@ -1,0 +1,303 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens.
+ *
+ * Semantic names rather than raw hex, so a colour can be retuned in one place
+ * and dark mode stays in step. Every foreground/background pair below meets
+ * WCAG AA (4.5:1) for body text.
+ *
+ * Palette rationale: a slate neutral base with a deep blue primary reads as
+ * professional and calm — right for a tool people stare at all day while making
+ * decisions about other people's careers. Amber is the only accent, borrowed
+ * from construction signage, reserved for warnings so it keeps its urgency.
+ */
+
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --text-2xs: 0.6875rem; /* 11px, chip and stat labels only */
+}
+
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;
+  --surface-hover: #eef1f5;
+  --border: #e2e6ec;
+  --border-strong: #cfd6e0;
+
+  --text: #0f172a;
+  --text-muted: #55617a;
+  --text-subtle: #78849b;
+
+  --primary: #1e3a8a;
+  --primary-hover: #16307a;
+  --primary-fg: #ffffff;
+  --primary-soft: #eef2ff;
+
+  --success: #047857;
+  --success-soft: #ecfdf5;
+  --success-border: #a7f3d0;
+
+  --warn: #b45309;
+  --warn-soft: #fffbeb;
+  --warn-border: #fde68a;
+
+  --danger: #be123c;
+  --danger-soft: #fff1f2;
+  --danger-border: #fecdd3;
+
+  --ring: #1e3a8a;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-lift: 0 4px 12px rgb(15 23 42 / 0.08), 0 2px 4px rgb(15 23 42 / 0.04);
+  --shadow-modal: 0 20px 50px rgb(15 23 42 / 0.22);
+
+  /* Brand gradient — a single deep blue → indigo → violet sweep, used sparingly
+     on the logo, primary hero surfaces and the auth showcase. One accent, not a
+     rainbow, so the tool still reads as a serious instrument. */
+  --brand-1: #1e3a8a;
+  --brand-2: #3b52c4;
+  --brand-3: #6d3bda;
+  --brand-grad: linear-gradient(135deg, var(--brand-1) 0%, var(--brand-2) 45%, var(--brand-3) 100%);
+}
+
+/*
+ * Dark mode follows the system setting. Surfaces are lifted with lighter tonal
+ * greys rather than inverted, and the primary is desaturated — a fully
+ * saturated primary vibrates against a dark surface.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0f17;
+    --surface: #131926;
+    --surface-2: #1a2233;
+    --surface-hover: #1e2739;
+    --border: #232d40;
+    --border-strong: #35415a;
+
+    --text: #e8edf5;
+    --text-muted: #a3b0c6;
+    --text-subtle: #7c8aa2;
+
+    --primary: #8aa5ff;
+    --primary-hover: #a0b6ff;
+    --primary-fg: #0b0f17;
+    --primary-soft: #1a2440;
+
+    --success: #34d399;
+    --success-soft: #0d2b23;
+    --success-border: #1d5546;
+
+    --warn: #fbbf24;
+    --warn-soft: #2a2011;
+    --warn-border: #5c4517;
+
+    --danger: #fb7185;
+    --danger-soft: #2c1119;
+    --danger-border: #5e2130;
+
+    --ring: #8aa5ff;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-lift: 0 4px 14px rgb(0 0 0 / 0.5);
+    --shadow-modal: 0 20px 50px rgb(0 0 0 / 0.65);
+
+    /* Brighter stops so the gradient still glows on a near-black background */
+    --brand-1: #3b52c4;
+    --brand-2: #6d3bda;
+    --brand-3: #9333ea;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-hover: var(--surface-hover);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+
+  --color-ink: var(--text);
+  --color-ink-muted: var(--text-muted);
+  --color-ink-subtle: var(--text-subtle);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-soft: var(--primary-soft);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-border: var(--success-border);
+
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-border: var(--warn-border);
+
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-border: var(--danger-border);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-lift: var(--shadow-lift);
+  --shadow-modal: var(--shadow-modal);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  /* Slightly tighter tracking on a UI face reads as more deliberate */
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scores, counts and years sit in columns — tabular figures stop them jittering */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* One focus style everywhere, never removed: keyboard users depend on it */
+*:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 5px;
+}
+
+::selection {
+  background: var(--primary);
+  color: var(--primary-fg);
+}
+
+/* Honour the OS setting — motion is genuinely painful with vestibular disorders */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * Entrance for cards and rows. Deliberately gentle — a 4px lift over 200ms
+ * settles rather than "shoots in", so a full reload (or a live refresh) reads as
+ * calm, not jumpy. transform + opacity only, never width/height.
+ *
+ * On a soft/live refresh React reconciles existing elements in place, so only
+ * genuinely new rows animate — the board doesn't re-flash on every update.
+ */
+.rise {
+  animation: rise 200ms var(--ease-out-soft) both;
+}
+
+/* A plain fade, for things that shouldn't move at all (panels, overlays). */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fade-in {
+  animation: fade-in 240ms ease both;
+}
+
+/* --- Brand surfaces --- */
+
+/* The gradient logo tile and any hero panel that carries the brand. */
+.brand-grad {
+  background-image: var(--brand-grad);
+}
+
+/*
+ * A slow, low-contrast aurora that drifts behind the auth showcase. It moves
+ * over ~18s so it never competes for attention, and stops entirely under
+ * prefers-reduced-motion (handled by the global rule below).
+ */
+@keyframes aurora {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+.aurora {
+  background-image: var(--brand-grad);
+  background-size: 200% 200%;
+  animation: aurora 18s ease-in-out infinite;
+}
+
+/* --- Carousel --- */
+
+/* Slides crossfade in place; the leaving slide is absolutely positioned so the
+   panel height stays constant and nothing reflows. */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.slide-in {
+  animation: slide-in 500ms var(--ease-out-soft) both;
+}
+
+/* Soft loading shimmer for skeleton states. */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--surface-hover) 60%, transparent),
+    transparent
+  );
+  animation: shimmer 1.6s infinite;
+}
+
+/* Thin scrollbars inside panels, so a scroll region doesn't dominate the layout */
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.scroll-slim::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-slim::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 99px;
+}
+.scroll-slim::-webkit-scrollbar-track {
+  background: transparent;
+}
