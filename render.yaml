@@ -10,10 +10,6 @@ services:
     name: ats-tracker
     runtime: node
     plan: free
-    # Turso database is locked to aws-ap-south-1 (Mumbai) on the free plan.
-    # Singapore is the closest Render region to it, keeping every DB round-trip
-    # fast instead of crossing the globe to Render's US-default region.
-    region: singapore
     buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /login
