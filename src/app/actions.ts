@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma, parseJson } from "@/lib/db";
-import { extractText, extractContact } from "@/lib/resume-parse";
+import { extractText, extractContact, prettifyNameFromEmail } from "@/lib/resume-parse";
 import { redirect } from "next/navigation";
 import { scoreByRules, type JobCriteria, type RuleDetail } from "@/lib/score-rules";
 import { scoreByAi, isAiConfigured } from "@/lib/score-ai";
@@ -310,7 +310,7 @@ export async function uploadResume(
         where: { email },
         update: { resumeText: text, resumeFile: file.name, ...(name ? { name } : {}) },
         create: {
-          name: name ?? email,
+          name: name ?? prettifyNameFromEmail(email),
           email,
           phone: contact.phone,
           resumeText: text,

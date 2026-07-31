@@ -75,7 +75,17 @@ export function extractContact(text: string): Omit<ParsedResume, "text"> {
   for (const line of lines.slice(0, 8)) {
     if (line.length < 3 || line.length > 60) continue;
     if (EMAIL.test(line) || /\d{4}/.test(line)) continue;
-    if (/^(curriculum|resume|cv|profile|summary|contact)\b/i.test(line)) continue;
+    // Section headers ("Experience Summary", "Career Objective", ...) match the
+    // word-count check below just as well as a real name, so filter by the
+    // heading word appearing anywhere the line starts, and by the trailing
+    // colon most headers use but names never do.
+    if (
+      /^(curriculum|resume|cv|profile|summary|contact|experience|objective|career|personal|education|skills|about|qualifications?|references?)\b/i.test(
+        line,
+      )
+    )
+      continue;
+    if (/:$/.test(line)) continue;
     const words = line.split(/\s+/);
     if (words.length >= 2 && words.length <= 5) {
       name = line;
@@ -84,4 +94,20 @@ export function extractContact(text: string): Omit<ParsedResume, "text"> {
   }
 
   return { name, email, phone };
+}
+
+/**
+ * Best-effort human name guess from an email's local part, for the rare case
+ * where no name line could be found anywhere in the CV. Splits on the usual
+ * separators and strips trailing digits (e.g. "pathan95") — still a guess,
+ * but reads far better than showing the raw email as someone's name.
+ */
+export function prettifyNameFromEmail(email: string): string {
+  const local = email.split("@")[0];
+  const words = local
+    .split(/[._-]+/)
+    .map((w) => w.replace(/\d+$/, ""))
+    .filter(Boolean);
+  if (words.length === 0) return email;
+  return words.map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(" ");
 }

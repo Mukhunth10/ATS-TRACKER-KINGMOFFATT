@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma, parseJson } from "@/lib/db";
-import { extractText, extractContact } from "@/lib/resume-parse";
+import { extractText, extractContact, prettifyNameFromEmail } from "@/lib/resume-parse";
 import { scoreCandidate } from "@/lib/score-rules";
 import { denyAnonymous } from "@/lib/api-auth";
 
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
     // A returning candidate's latest resume is the one worth scoring against.
     update: { resumeText: text, resumeFile: file.name, name: name ?? undefined },
     create: {
-      name: name ?? email,
+      name: name ?? prettifyNameFromEmail(email),
       email,
       phone: (form.get("phone") as string) || contact.phone,
       location: (form.get("location") as string) || null,

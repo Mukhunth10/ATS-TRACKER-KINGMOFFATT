@@ -26,11 +26,10 @@ import type { AiResult } from "./score-ai";
 
 const DEFAULT_URL = "http://localhost:11434";
 
-// A strong, laptop-friendly default. Qwen2.5-Instruct leads its size class at
-// instruction-following and structured extraction — ideal for rubric scoring.
-// Override with LOCAL_AI_MODEL (e.g. "qwen2.5:14b-instruct" on a bigger machine,
-// or "llama3.1:8b").
-const DEFAULT_MODEL = "qwen2.5:7b-instruct";
+// Matches the Qwen3 build already pulled on this machine. Override with
+// LOCAL_AI_MODEL if you pull a different one (e.g. "qwen3:8b" for a lighter,
+// faster model on a machine without much VRAM to spare).
+const DEFAULT_MODEL = "qwen3.6:latest";
 
 export function localAiConfigured(): boolean {
   // Local screening is considered "on" whenever it's explicitly enabled or a

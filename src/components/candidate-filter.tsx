@@ -12,6 +12,7 @@ import {
   BIM_ROLE_RANK,
   BIM_ROLE_LABEL,
   REGION_LABEL,
+  TENURE_THRESHOLDS,
   type WorkAuth,
   type DegreeLevel,
   type LodLevel,
@@ -44,6 +45,8 @@ export interface FilterRow {
   bimRole?: BimRole;
   digitalEngineering?: boolean;
   regions?: Region[];
+  /** Longest single stint at one employer, in years — a loyalty/stability hint. */
+  longestTenureYears?: number | null;
   /** Candidate location, when known — used by the location filter. */
   location?: string | null;
   /** Lowercased resume text, for keyword search. */
@@ -79,6 +82,7 @@ export function CandidateFilter({
   const [minBimRole, setMinBimRole] = useState("all"); // all | coordinator | lead | manager
   const [digitalOnly, setDigitalOnly] = useState(false);
   const [region, setRegion] = useState("all"); // all | uk | ireland | germany | europe
+  const [minTenure, setMinTenure] = useState("all"); // all | 1 | 2 | 3 | 5 | 7 | 10
 
   const sources = useMemo(
     () =>
@@ -112,6 +116,7 @@ export function CandidateFilter({
       }
       if (digitalOnly && !r.digitalEngineering) return false;
       if (region !== "all" && !(r.regions ?? []).includes(region as Region)) return false;
+      if (minTenure !== "all" && (r.longestTenureYears ?? 0) < Number(minTenure)) return false;
       if (loc) {
         // Match the candidate's location field first, then fall back to any
         // mention of the place in the CV body.
@@ -153,6 +158,7 @@ export function CandidateFilter({
     minBimRole,
     digitalOnly,
     region,
+    minTenure,
   ]);
 
   const control =
@@ -169,7 +175,8 @@ export function CandidateFilter({
     minLod !== "all" ||
     minBimRole !== "all" ||
     digitalOnly ||
-    region !== "all";
+    region !== "all" ||
+    minTenure !== "all";
 
   const clearAll = () => {
     setMinScore(0);
@@ -183,6 +190,7 @@ export function CandidateFilter({
     setMinBimRole("all");
     setDigitalOnly(false);
     setRegion("all");
+    setMinTenure("all");
   };
 
   return (
@@ -389,6 +397,23 @@ export function CandidateFilter({
             <span className="text-ink-muted">Digital engineering</span>
           </label>
 
+          <label className="flex items-center gap-1.5 text-sm">
+            <span className="text-ink-muted">Tenure</span>
+            <select
+              value={minTenure}
+              onChange={(e) => setMinTenure(e.target.value)}
+              aria-label="Filter by minimum tenure at one employer"
+              className={control}
+            >
+              <option value="all">Any</option>
+              {TENURE_THRESHOLDS.map((t) => (
+                <option key={t} value={t}>
+                  {t}+ yrs at one employer
+                </option>
+              ))}
+            </select>
+          </label>
+
           <span className="text-xs text-ink-subtle">
             Detected from the CV — verify before relying on it.
           </span>
@@ -445,14 +470,15 @@ export function CandidateFilter({
                     </p>
 
                     {/* Facet badges — work authorisation, degree, LOD, BIM role,
-                        digital engineering and region, all read off the CV.
-                        Neutral styling: these are hints, not verdicts. */}
+                        digital engineering, region and tenure, all read off
+                        the CV. Neutral styling: these are hints, not verdicts. */}
                     {(r.workAuth && r.workAuth !== "unknown") ||
                     (r.degree && r.degree !== "none") ||
                     r.lodMax ||
                     (r.bimRole && r.bimRole !== "none") ||
                     r.digitalEngineering ||
-                    (r.regions && r.regions.length > 0) ? (
+                    (r.regions && r.regions.length > 0) ||
+                    r.longestTenureYears ? (
                       <div className="mt-1.5 flex flex-wrap items-center gap-1">
                         {r.workAuth === "right" && (
                           <span className="rounded-md bg-success-soft px-1.5 py-0.5 text-2xs font-medium text-success ring-1 ring-success-border ring-inset">
@@ -494,6 +520,11 @@ export function CandidateFilter({
                               {REGION_LABEL[rg]}
                             </span>
                           ))}
+                        {r.longestTenureYears && (
+                          <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-2xs font-medium text-ink-muted ring-1 ring-line ring-inset">
+                            {r.longestTenureYears}y at one employer
+                          </span>
+                        )}
                       </div>
                     ) : null}
 

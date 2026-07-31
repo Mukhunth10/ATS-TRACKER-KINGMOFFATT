@@ -95,6 +95,7 @@ export default async function JobPage(props: PageProps<"/jobs/[id]">) {
       bimRole: facets.bimRole,
       digitalEngineering: facets.digitalEngineering,
       regions: facets.regions,
+      longestTenureYears: facets.longestTenureYears,
       location: app.candidate.location ?? null,
       haystack: app.candidate.resumeText.toLowerCase(),
     };

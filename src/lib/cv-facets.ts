@@ -60,6 +60,8 @@ export const REGION_LABEL: Record<Region, string> = {
   europe: "Europe",
 };
 
+export const TENURE_THRESHOLDS = [1, 2, 3, 5, 7, 10];
+
 export interface CvFacets {
   workAuth: WorkAuth;
   degree: DegreeLevel;
@@ -71,6 +73,8 @@ export interface CvFacets {
   digitalEngineering: boolean;
   /** Project regions mentioned — UK/Ireland/Germany also imply "europe". */
   regions: Region[];
+  /** Longest single stint at one employer, in years — a loyalty/stability hint. */
+  longestTenureYears: number | null;
 }
 
 // Phrases that indicate the candidate needs visa sponsorship (checked first, as
@@ -191,6 +195,31 @@ export function detectRegions(text: string): Region[] {
   return [...found];
 }
 
+// Matches employment-style date ranges: "2018 - 2026", "2015–2019", "2019 to
+// Present", "2020 - current" etc. Deliberately loose about the separator and
+// the "still there" wording since CVs are inconsistent about both.
+const TENURE_RANGE =
+  /\b((?:19|20)\d{2})\s*(?:-|–|—|to)\s*((?:19|20)\d{2}|present|current|now|ongoing|(?:to|till)\s+date)\b/gi;
+
+/**
+ * Longest single stint at one employer, in years — a loyalty/stability hint,
+ * not a verified employment history. Can't reliably tell an employment date
+ * range apart from an education one, so this is a "worth a look" signal like
+ * every other facet here, most useful alongside the CV itself.
+ */
+export function detectLongestTenureYears(text: string): number | null {
+  const currentYear = new Date().getFullYear();
+  let max = 0;
+  for (const m of text.matchAll(TENURE_RANGE)) {
+    const start = Number(m[1]);
+    const endRaw = m[2].toLowerCase();
+    const end = /present|current|now|ongoing|date/.test(endRaw) ? currentYear : Number(endRaw);
+    const span = end - start;
+    if (span > 0 && span <= 50 && span > max) max = span;
+  }
+  return max > 0 ? max : null;
+}
+
 export function extractFacets(resumeText: string): CvFacets {
   return {
     workAuth: detectWorkAuth(resumeText),
@@ -199,5 +228,6 @@ export function extractFacets(resumeText: string): CvFacets {
     bimRole: detectBimRole(resumeText),
     digitalEngineering: detectDigitalEngineering(resumeText),
     regions: detectRegions(resumeText),
+    longestTenureYears: detectLongestTenureYears(resumeText),
   };
 }
