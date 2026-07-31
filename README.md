@@ -48,10 +48,14 @@ See "Enabling AI screening" below if you ever want it.
 ```bash
 cd ats
 npm install
-npx prisma migrate dev      # creates dev.db
+# .env: DATABASE_URL="postgresql://user:pass@host/db?sslmode=require"
+npx prisma migrate deploy   # creates the schema
 npx tsx prisma/seed.ts      # 4 sample roles + 4 sample candidates
 npm run dev                 # http://localhost:3000
 ```
+
+Needs a real Postgres instance to point `DATABASE_URL` at — a free one from
+Render, Neon or Supabase all work.
 
 ### Enabling AI screening (optional, costs money)
 
@@ -169,26 +173,12 @@ What is still yours to do:
 - **Appoint a contact** and monitor the `PRIVACY_CONTACT_EMAIL` inbox for access,
   deletion, and withdrawal requests.
 
-## Deploying to Postgres
+## Database
 
-The schema deliberately avoids enums and array columns so the same models run on
-both SQLite and Postgres. Switching takes three edits:
-
-1. `prisma/schema.prisma` — change `provider = "sqlite"` to `"postgresql"`.
-2. `.env` — point `DATABASE_URL` at your Postgres instance.
-3. `src/lib/db.ts` and `prisma/seed.ts` — swap the driver adapter:
-
-   ```bash
-   npm install @prisma/adapter-pg
-   npm uninstall @prisma/adapter-better-sqlite3
-   ```
-
-   ```ts
-   import { PrismaPg } from "@prisma/adapter-pg";
-   const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-   ```
-
-Then `npx prisma migrate deploy`. Neon and Supabase both work on their free tiers.
+Postgres everywhere — local development and production both point at a real
+Postgres instance via `DATABASE_URL`, through `@prisma/adapter-pg`
+(`src/lib/db.ts`). The schema itself has no Postgres-specific features, so any
+Postgres host works: Render Postgres, Neon, and Supabase all have free tiers.
 
 ## Accounts and sign-in
 

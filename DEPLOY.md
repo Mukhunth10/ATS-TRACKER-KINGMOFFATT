@@ -11,66 +11,71 @@ location), assessments, the live board and audit trail.
 the model on your machine. Everything else runs fine; the verdict comes back when
 you screen from your own laptop (or if you enable the paid Claude key).
 
-There are two free services: **Turso** (the database) and **Render** (the app).
+Both pieces run on **Render**: a free Postgres database and a free web
+service, ideally in the same region so every query stays fast.
 
 ---
 
-## 1. Database — Turso (hosted SQLite)
+## 1. Database — Render Postgres
 
-1. Go to <https://turso.tech> → **Sign up** with GitHub (no card).
-2. Create a database (any name, e.g. `ats`). Pick the region closest to you.
-3. On the database page, copy two things:
-   - **Database URL** — looks like `libsql://ats-yourname.turso.io`
-   - **Auth token** — create one ("Generate token"); a long `eyJ...` string.
+1. On <https://render.com>, **New → PostgreSQL** → name it (e.g.
+   `ats-tracker-db`) → pick the **same region** you'll use for the web service
+   below → **Free** plan → **Create Database**.
+2. Once it's up, copy the **External Database URL** (needed once, from your
+   own laptop, to create the schema).
 
-### Create the tables + demo roles (run once, on your laptop)
+### Create the schema (run once, on your laptop)
 
 In the `ats` folder:
 
 ```bash
 # PowerShell
-$env:TURSO_DATABASE_URL="libsql://ats-yourname.turso.io"
-$env:TURSO_AUTH_TOKEN="eyJ...your token..."
-npm run init:turso
+$env:DATABASE_URL="postgresql://...external database url.../ats_tracker_db?sslmode=require"
+npx prisma migrate deploy
 ```
 
-You should see `Schema ready …` and `Seeded 4 demo roles.` The database is now
-ready. (Running it again is safe — it won't duplicate anything.)
+You should see `All migrations have been successfully applied.`
+
+Also copy the **Internal Database URL** (used by the web service below — no
+SSL hop needed since both live inside Render's network).
 
 ---
 
-## 2. App — Render
+## 2. App — Render Web Service
 
-1. Go to <https://render.com> → **Sign up** with GitHub (no card).
-2. **New → Blueprint** → connect the **`ats_tracker`** repo → Render reads
-   `render.yaml` and proposes the service. Click **Apply**.
-3. When prompted, fill the secret env vars:
-   - `TURSO_DATABASE_URL` — the `libsql://…` URL from step 1
-   - `TURSO_AUTH_TOKEN` — the `eyJ…` token from step 1
+1. **New → Blueprint** → connect the repo → Render reads `render.yaml` and
+   proposes the service. Click **Apply**.
+2. When prompted, fill the secret env vars:
+   - `DATABASE_URL` — the **Internal Database URL** from step 1
    - `SIGNUP_CODE` — an invite code of your choice (share it only with your HR
-     testers, e.g. `km-demo-2026`)
+     testers, e.g. `km-hiring-2026`)
    - `PRIVACY_CONTACT_EMAIL` — a monitored inbox
-4. Click **Create / Deploy**. First build takes ~3–5 minutes.
-5. When it's live you get a URL like `https://ats-tracker.onrender.com`.
+3. Click **Create / Deploy**. First build takes ~3–5 minutes.
+4. When it's live you get a URL like `https://ats-tracker.onrender.com`.
 
 ### Share it
 
 Send HR the URL + the `SIGNUP_CODE`. They open the link, create an account with
 the code, and start screening. The link stays up with your laptop off.
 
-> **Free-tier note:** after ~15 minutes with no visitors the service sleeps; the
-> next visit wakes it in ~30 seconds (one slow load, then normal). Data is safe
-> in Turso regardless.
+> **Free-tier notes:** the web service sleeps after ~15 minutes with no
+> visitors; the next visit wakes it in ~30 seconds (one slow load, then
+> normal). Render's free Postgres plan has historically expired after a fixed
+> period (check current terms on render.com) — worth confirming before
+> relying on it long-term for real hiring data; upgrading to a paid Postgres
+> plan removes that limit.
 
 ---
 
 ## Turning it off
 
-Nothing to pay, but when the demo's done: in Render, delete the service (or set
-it to suspend). In Turso, delete the database. That's it.
+Nothing to pay on the free tier, but when you're done: in Render, delete both
+the web service and the Postgres database.
 
-## Back on your laptop
+## Local development
 
-Local development is unchanged — it uses the offline SQLite file and your local
-Ollama model. The Turso/Render setup is entirely separate and only active while
-deployed.
+Local development now points at the same kind of Postgres database (set
+`DATABASE_URL` in `.env` to a Postgres connection string — the Render database
+itself, or any other Postgres instance). The local Ollama AI screening step is
+unaffected either way; it runs from your own machine regardless of where the
+database lives.

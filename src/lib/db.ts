@@ -1,32 +1,14 @@
 import { PrismaClient } from "@prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import { PrismaLibSql } from "@prisma/adapter-libsql";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 /**
- * One schema, two homes.
- *
- * Locally (and on your own laptop) we talk to a plain SQLite file through the
- * better-sqlite3 driver — fully offline, no server. When deployed to a host with
- * no persistent disk (Render, Vercel, …) we point at Turso instead — hosted
- * libSQL, which IS SQLite, so the schema, migrations and queries are identical.
- * The only difference is this adapter choice, driven by env vars.
- *
- * Set TURSO_DATABASE_URL (libsql://…) + TURSO_AUTH_TOKEN to use Turso; leave them
- * unset to use the local file.
+ * Postgres everywhere — local dev and production point at the same kind of
+ * server via DATABASE_URL, so there's no adapter branching to keep in sync.
  */
 function createClient() {
-  const tursoUrl = process.env.TURSO_DATABASE_URL;
-
-  if (tursoUrl) {
-    const adapter = new PrismaLibSql({
-      url: tursoUrl,
-      authToken: process.env.TURSO_AUTH_TOKEN,
-    });
-    return new PrismaClient({ adapter });
-  }
-
-  const adapter = new PrismaBetterSqlite3({
-    url: process.env.DATABASE_URL ?? "file:./dev.db",
+  const adapter = new PrismaPg({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
   });
   return new PrismaClient({ adapter });
 }

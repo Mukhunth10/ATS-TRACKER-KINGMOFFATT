@@ -1,10 +1,13 @@
 # Render Blueprint — deploys the ATS as a single always-on web service.
-# In Render: New → Blueprint → connect the ats_tracker repo → it reads this file.
-# Then set the secret env vars (marked sync:false) in the dashboard.
+# In Render: New → Blueprint → connect the ATS-TRACKER-KINGMOFFATT repo → it
+# reads this file. Then set the secret env vars (marked sync:false) in the
+# dashboard.
 #
-# Database: hosted SQLite on Turso (free, no card). Create the DB, run
-# `npm run init:turso` once locally to create the schema + seed, then paste the
-# TURSO_* values below.
+# Database: Render Postgres. Create it separately in the Render dashboard
+# (New -> PostgreSQL, same region as this service), then run
+# `npx prisma migrate deploy` once locally against its External Database URL
+# to create the schema, and paste the Internal Database URL below as
+# DATABASE_URL (internal, since this service and the database are on Render).
 services:
   - type: web
     name: ats-tracker
@@ -18,10 +21,8 @@ services:
         value: "22"
       - key: NODE_ENV
         value: production
-      # --- Database (Turso / libSQL) — set both in the dashboard ---
-      - key: TURSO_DATABASE_URL
-        sync: false
-      - key: TURSO_AUTH_TOKEN
+      # --- Database (Render Postgres) — set in the dashboard ---
+      - key: DATABASE_URL
         sync: false
       # --- Who may create an account (share only with your HR testers) ---
       - key: SIGNUP_CODE
@@ -33,10 +34,13 @@ services:
       # --- Candidate-facing privacy notice (fill with real details before
       #     sending assessments to real people) ---
       - key: COMPANY_NAME
-        value: "King & Moffatt (demo)"
+        value: "King & Moffatt"
       - key: PRIVACY_CONTACT_EMAIL
         sync: false
+      # TODO: confirm King & Moffatt's real data retention policy and replace
+      # this placeholder before candidates rely on it — it's shown in the
+      # legal privacy notice before they apply.
       - key: DATA_RETENTION
-        value: "deleted at the end of this demo"
+        value: "retained for 12 months from the date of application, then deleted"
       - key: PRIVACY_NOTICE_VERSION
         value: "1"

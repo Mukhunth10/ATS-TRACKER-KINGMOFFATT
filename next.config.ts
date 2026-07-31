@@ -4,20 +4,10 @@ const nextConfig: NextConfig = {
   // Keep the local embedding model out of the bundle — it ships native ONNX
   // runtime binaries that must load from node_modules at runtime, not be
   // webpack/turbopack-bundled.
-  // Native modules that must load from node_modules at runtime, not be bundled:
-  // the ONNX runtime behind the local embedding model, and the SQLite/libSQL
-  // driver bindings.
   // pdf-parse pulls in pdfjs-dist, which loads pdf.worker.mjs from a path
   // relative to its own file at runtime — bundling it rewrites that path and
   // breaks the lookup, so it must stay external too.
-  serverExternalPackages: [
-    "@huggingface/transformers",
-    "@prisma/adapter-better-sqlite3",
-    "@prisma/adapter-libsql",
-    "@libsql/client",
-    "better-sqlite3",
-    "pdf-parse",
-  ],
+  serverExternalPackages: ["@huggingface/transformers", "pdf-parse"],
   experimental: {
     // When the app is reached through a tunnel or a deployed host the browser's
     // Origin is that domain, not localhost. Without these, Next.js rejects every
